@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Literal
 
 import pandas as pd
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
@@ -52,6 +51,9 @@ class AlpacaGateway:
             paper=settings.paper_mode,
         )
 
+    def market_is_open(self) -> bool:
+        return bool(self.trading.get_clock().is_open)
+
     def stock_frame(
         self,
         symbol: str,
@@ -83,11 +85,27 @@ class AlpacaGateway:
 
     def fetch_fable_universe(self) -> dict[str, pd.DataFrame]:
         return {
-            "SPY": self.stock_frame("SPY", timeframe=TimeFrame(15, TimeFrameUnit.Minute), lookback_days=7),
-            "QQQ": self.stock_frame("QQQ", timeframe=TimeFrame(15, TimeFrameUnit.Minute), lookback_days=7),
+            "SPY": self.stock_frame(
+                "SPY",
+                timeframe=TimeFrame(15, TimeFrameUnit.Minute),
+                lookback_days=7,
+            ),
+            "QQQ": self.stock_frame(
+                "QQQ",
+                timeframe=TimeFrame(15, TimeFrameUnit.Minute),
+                lookback_days=7,
+            ),
             "BTC/USD": self.crypto_frame("BTC/USD", lookback_days=7),
-            "GLD": self.stock_frame("GLD", timeframe=TimeFrame(4, TimeFrameUnit.Hour), lookback_days=365),
-            "USO": self.stock_frame("USO", timeframe=TimeFrame(4, TimeFrameUnit.Hour), lookback_days=365),
+            "GLD": self.stock_frame(
+                "GLD",
+                timeframe=TimeFrame(4, TimeFrameUnit.Hour),
+                lookback_days=365,
+            ),
+            "USO": self.stock_frame(
+                "USO",
+                timeframe=TimeFrame(4, TimeFrameUnit.Hour),
+                lookback_days=365,
+            ),
         }
 
     def submit_entry(self, signal: Signal, quantity: float):
@@ -95,11 +113,13 @@ class AlpacaGateway:
             raise RuntimeError("EXECUTE_ORDERS=false; order submission blocked")
         if signal.action not in {SignalAction.LONG, SignalAction.SHORT}:
             raise ValueError("Only entry signals can be submitted")
+        if signal.symbol == "BTC/USD" and signal.action == SignalAction.SHORT:
+            raise ValueError("BTC/USD spot short entry is blocked")
 
         side = OrderSide.BUY if signal.action == SignalAction.LONG else OrderSide.SELL
         tif = TimeInForce.GTC if signal.symbol == "BTC/USD" else TimeInForce.DAY
         order = MarketOrderRequest(
-            symbol=signal.symbol.replace("/", ""),
+            symbol=signal.symbol,
             qty=quantity,
             side=side,
             time_in_force=tif,
@@ -109,4 +129,4 @@ class AlpacaGateway:
     def close_symbol(self, symbol: str):
         if not self.settings.execute_orders:
             raise RuntimeError("EXECUTE_ORDERS=false; order submission blocked")
-        return self.trading.close_position(symbol.replace("/", ""))
+        return self.trading.close_position(symbol)
